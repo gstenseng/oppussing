@@ -125,7 +125,7 @@ function updateRoomDiagram(){
  const labels=shape==='rectangle'?[[160,224,L],[290,129,W]]:shape==='L'?[[105,45,L-c],[235,84,d],[195,226,L],[290,159,W-d]]:[[160,45,L],[290,130,W],[160,125,c],[115,166,d],[200,166,d]];
  $('#roomDiagramLabels').innerHTML=valid?labels.map(([x,y,value])=>'<span class="diagram-label" style="left:'+x/340*100+'%;top:'+y/260*100+'%">'+decimal(value)+' m</span>').join(''):'';
 }
-$('#roomForm [name=shape]').forEach(el=>el.addEventListener('change',()=>{if(el.value!=='custom'){editingCustomRoom=null;$('#roomForm button[type=submit]').textContent='+ Legg til rom'}updateRoomDiagram()}));
+$$('#roomForm [name=shape]').forEach(el=>el.addEventListener('change',()=>{if(el.value!=='custom'){editingCustomRoom=null;$('#roomForm button[type=submit]').textContent='+ Legg til rom'}updateRoomDiagram()}));
 Object.values(diagInputs).forEach(el=>el.addEventListener('input',updateRoomDiagram));
 updateRoomDiagram();
 $('#roomForm').addEventListener('submit',e=>{e.preventDefault();const v=read(e.target),L=n(v.length),W=n(v.width),cw=n(v.cutWidth),cd=n(v.cutDepth);if(v.shape==='custom'){saveCustomRoom(e.target);return}if((v.shape==='L'||v.shape==='U')&&!(cw>0&&cd>0&&cw<L&&cd<W)){alert('Innhakket må være større enn null og mindre enn rommets totale mål.');return}const r={id:id(),name:v.name.trim(),length:L,width:W,height:n(v.height),shape:v.shape,cutWidth: v.shape==='rectangle'?0:cw,cutDepth:v.shape==='rectangle'?0:cd};r.walls=wallPlan(r);db.rooms.push(r);e.target.reset();updateRoomDiagram();save()});
