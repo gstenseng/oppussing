@@ -16,7 +16,7 @@
 <label><input type="radio" name="shape" value="L"><span>◩<small>L-form</small></span></label>
 <label><input type="radio" name="shape" value="U"><span>⊔<small>U-form</small></span></label>
 <label><input type="radio" name="shape" value="custom"><span>✎<small>Tegn selv</small></span></label></div>
-<div id="customRoomEditor" class="hidden"><p class="helper">Trykk på hjørnene i rekkefølge. Trykk på første hjørne eller «Lukk rom» for å avslutte. Rutenettet er 0,5 meter; punkter festes til nærmeste 0,25 meter. Du kan også legge til hjørner med koordinater.</p><svg id="customRoomBoard" class="draw-board" viewBox="-1 -1 14 10" role="img" aria-label="Tegneflate for rom"></svg><div class="actions"><button type="button" id="closeRoomDrawing" class="btn secondary small">Lukk rom</button><button type="button" id="undoRoomDrawing" class="btn secondary small">Angre</button><button type="button" id="resetRoomDrawing" class="btn secondary small">Start på nytt</button></div><div class="grid" style="margin-top:10px"><div><label for="cornerX">Hjørne X (m)</label><input id="cornerX" type="number" step=".01" value="0"></div><div><label for="cornerY">Hjørne Y (m)</label><input id="cornerY" type="number" step=".01" value="0"></div></div><button type="button" id="addRoomCorner" class="btn secondary small" style="margin-top:8px">+ Legg til hjørne</button><p class="helper">Etter lukking: sett vegglengder under figuren. Endring flytter veggens endehjørne, så naboveggen får ny lengde og vinkel. Kontroller alle mål og romformen til slutt.</p><div id="customWallLengths" class="draw-lengths"></div><p id="customRoomStatus" class="notice" role="status" aria-live="polite"></p></div>
+<div id="customRoomEditor" class="hidden"><p class="helper">Trykk på hjørnene i rekkefølge. Veggene festes vannrett eller loddrett. Trykk nær det oransje startpunktet eller «Lukk rom» for å feste siste vegg til starten. Et ekstra rettvinklet hjørne legges til ved behov. Rutenettet er 0,5 meter; punkter festes til nærmeste 0,25 meter. Du kan også legge til hjørner med koordinater.</p><svg id="customRoomBoard" class="draw-board" viewBox="-1 -1 14 10" role="img" aria-label="Tegneflate for rom"></svg><div class="actions"><button type="button" id="closeRoomDrawing" class="btn secondary small">Lukk rom</button><button type="button" id="undoRoomDrawing" class="btn secondary small">Angre</button><button type="button" id="resetRoomDrawing" class="btn secondary small">Start på nytt</button></div><div class="grid" style="margin-top:10px"><div><label for="cornerX">Hjørne X (m)</label><input id="cornerX" type="number" step=".01" value="0"></div><div><label for="cornerY">Hjørne Y (m)</label><input id="cornerY" type="number" step=".01" value="0"></div></div><button type="button" id="addRoomCorner" class="btn secondary small" style="margin-top:8px">+ Legg til hjørne</button><p class="helper">Etter lukking: skriv inn lengden på hver vegg under figuren. Parallelle vegger kan få justert lengde for at rommet fortsatt skal henge sammen med rette vinkler. Kontroller alle målene til slutt.</p><div id="customWallLengths" class="draw-lengths"></div><p id="customRoomStatus" class="notice" role="status" aria-live="polite"></p></div>
 <p id="standardRoomHelp" class="helper">Skriv mål i meter i feltene ved veggene på figuren. Blå felter kan redigeres; de andre vegglengdene beregnes automatisk.</p>
 <div class="room-diagram" id="roomDiagram">
 <svg id="roomDrawing" viewBox="0 0 340 260" role="img" aria-label="Romfigur med mål"><path id="roomOutline" fill="#dcece2" stroke="#267052" stroke-width="3" stroke-linejoin="round"/></svg>
@@ -70,27 +70,64 @@ function savedRoomDrawing(r){return '<svg class="saved-plan" viewBox="'+drawingB
 function renderCustomRoom(){
  const board=$('#customRoomBoard');board.setAttribute('viewBox',drawingBounds(customPoints).join(' '));board.innerHTML=drawingMarkup(customPoints,customClosed,true);
  $('#customWallLengths').innerHTML=customClosed?polygonLengths(customPoints).map((length,i)=>'<label>Vegg '+(i+1)+' (m)<input data-draw-wall="'+i+'" type="number" min=".05" step="any" value="'+Number(length.toFixed(4))+'"></label>').join(''):'';
- $('#customRoomStatus').textContent=customClosed?'Gulvareal: '+decimal(polygonArea(customPoints))+' m² · '+customPoints.length+' vegger · Omkrets: '+decimal(polygonLengths(customPoints).reduce((a,b)=>a+b,0))+' m':customPoints.length+' hjørner. '+(customPoints.length<3?'Legg til minst tre hjørner.':'Legg til flere hjørner eller lukk rommet.');
+ $('#customRoomStatus').textContent=customClosed?'Gulvareal: '+decimal(polygonArea(customPoints))+' m² · '+customPoints.length+' vegger · Omkrets: '+decimal(polygonLengths(customPoints).reduce((a,b)=>a+b,0))+' m · Angi vegglengdene i feltene under tegningen.':customPoints.length+' hjørner. '+(customPoints.length<3?'Legg til minst tre hjørner.':'Trykk nær det oransje startpunktet for å lukke rommet.');
  $('#closeRoomDrawing').disabled=customClosed||customPoints.length<3;$('#addRoomCorner').disabled=customClosed;
  $('#roomForm button[type=submit]').textContent=editingCustomRoom? 'Lagre romendringer':'+ Legg til rom';
 }
-function addCustomCorner(p){
+function orthogonalPoints(points){return points.every((p,i)=>{const q=points[(i+1)%points.length];return Math.abs(p.x-q.x)<1e-8||Math.abs(p.y-q.y)<1e-8})}
+function snapWallPoint(points,p){
+ if(!points.length)return {...p};
+ const a=points[points.length-1];
+ return Math.abs(p.x-a.x)>=Math.abs(p.y-a.y)?{x:p.x,y:a.y}:{x:a.x,y:p.y};
+}
+function addCustomCorner(p,snapRadius=.3){
  if(customClosed)return;
- if(customPoints.length>=3&&Math.hypot(p.x-customPoints[0].x,p.y-customPoints[0].y)<.25){closeCustomRoom();return}
- if(customPoints.some(q=>Math.hypot(p.x-q.x,p.y-q.y)<.05)){$('#customRoomStatus').textContent='Velg et nytt hjørne.';return}
+ if(customPoints.length>=3&&Math.hypot(p.x-customPoints[0].x,p.y-customPoints[0].y)<=snapRadius){closeCustomRoom();return}
+ p=snapWallPoint(customPoints,p);
+ if(customPoints.some(q=>Math.hypot(p.x-q.x,p.y-q.y)<.05)){$('#customRoomStatus').textContent='Velg et nytt hjørne, eller trykk startpunktet for å lukke rommet.';return}
  customPoints.push(p);renderCustomRoom();
 }
-function closeCustomRoom(){if(!validPolygon(customPoints)){$('#customRoomStatus').textContent='Rommet må ha minst tre hjørner og veggene kan ikke krysse eller overlappe hverandre.';return}customClosed=true;renderCustomRoom()}
-$('#customRoomBoard').addEventListener('click',e=>{const board=e.currentTarget,pt=board.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(board.getScreenCTM().inverse());addCustomCorner({x:Math.round(p.x*4)/4,y:Math.round(p.y*4)/4})});
+function closedOrthogonalPlan(points){
+ if(points.length<3)return null;
+ const first=points[0],last=points[points.length-1],prev=points[points.length-2];
+ const aligned=Math.abs(first.x-last.x)<1e-8||Math.abs(first.y-last.y)<1e-8;
+ const bends=Math.abs(prev.y-last.y)<1e-8?[{x:last.x,y:first.y},{x:first.x,y:last.y}]:[{x:first.x,y:last.y},{x:last.x,y:first.y}];
+ const candidates=aligned?[points]:bends.map(b=>[...points,b]);
+ return candidates.find(p=>validPolygon(p)&&orthogonalPoints(p))||null;
+}
+function closeCustomRoom(){
+ const closed=closedOrthogonalPlan(customPoints);
+ if(!closed){$('#customRoomStatus').textContent='Kunne ikke lukke rommet uten kryssende vegger. Angre siste hjørne og prøv igjen.';return}
+ customPoints=closed;customClosed=true;renderCustomRoom();
+}
+function resizeOrthogonalWall(points,i,length){
+ if(!Number.isFinite(length)||length<.05)return null;
+ const a=points[i],b=points[(i+1)%points.length],next=points.map(p=>({...p}));
+ const horizontal=Math.abs(a.y-b.y)<1e-8,vertical=Math.abs(a.x-b.x)<1e-8;
+ if(horizontal||vertical){
+  const axis=horizontal?'x':'y',target=a[axis]+Math.sign(b[axis]-a[axis])*length,from=b[axis];
+  next.forEach(p=>{if(Math.abs(p[axis]-from)<1e-8)p[axis]=target});
+ }else{
+  // Eldre tegninger med skrå vegger kan fortsatt redigeres.
+  const old=Math.hypot(b.x-a.x,b.y-a.y);
+  next[(i+1)%points.length]={x:a.x+(b.x-a.x)*length/old,y:a.y+(b.y-a.y)*length/old};
+ }
+ return validPolygon(next)?next:null;
+}
+$('#customRoomBoard').addEventListener('click',e=>{
+ const board=e.currentTarget,pt=board.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;
+ const matrix=board.getScreenCTM(),p=pt.matrixTransform(matrix.inverse());
+ const radius=Math.max(.3,22/Math.hypot(matrix.a,matrix.b));
+ addCustomCorner({x:Math.round(p.x*4)/4,y:Math.round(p.y*4)/4},radius);
+});
 $('#addRoomCorner').addEventListener('click',()=>{const x=$('#cornerX').value,y=$('#cornerY').value;if(x!==''&&y!==''&&Number.isFinite(Number(x))&&Number.isFinite(Number(y)))addCustomCorner({x:Number(x),y:Number(y)})});
 $('#closeRoomDrawing').addEventListener('click',closeCustomRoom);
 $('#undoRoomDrawing').addEventListener('click',()=>{if(customClosed)customClosed=false;else customPoints.pop();renderCustomRoom()});
 $('#resetRoomDrawing').addEventListener('click',()=>{customPoints=[];customClosed=false;renderCustomRoom()});
 $('#customWallLengths').addEventListener('change',e=>{
  const el=e.target;if(!el.matches('[data-draw-wall]'))return;
- const i=Number(el.dataset.drawWall),j=(i+1)%customPoints.length,a=customPoints[i],b=customPoints[j],old=Math.hypot(b.x-a.x,b.y-a.y),length=Number(el.value);
- const next=customPoints.map(p=>({...p}));next[j]={x:a.x+(b.x-a.x)*length/old,y:a.y+(b.y-a.y)*length/old};
- if(!Number.isFinite(length)||length<.05||!validPolygon(next)){renderCustomRoom();$('#customRoomStatus').textContent='Denne lengden gir ugyldig romform. Endringen ble ikke brukt.';return}
+ const next=resizeOrthogonalWall(customPoints,Number(el.dataset.drawWall),Number(el.value));
+ if(!next){renderCustomRoom();$('#customRoomStatus').textContent='Denne lengden gir kryssende eller overlappende vegger. Endringen ble ikke brukt.';return}
  customPoints=next;renderCustomRoom();
 });
 function saveCustomRoom(form){
